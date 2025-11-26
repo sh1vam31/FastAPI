@@ -1,5 +1,8 @@
 from fastapi import FastAPI, Path, HTTPException, Query           # Import FastAPI class
 import json
+from fastapi.responses import JSONResponse       # Import JSONResponse for custom JSON responses
+from typing import Annotated, Literal   # Import Annotated and Literal for type annotations
+from pydantic import BaseModel, Field, computed_field      # Import BaseModel from Pydantic for data validation and Field for giving extra information about the fields and computed_field for computed properties
 
 app = FastAPI()             # Create an Object of FastAPI
 
@@ -61,5 +64,66 @@ def sorted_patients(sort_by: str = Query(..., description="Sort on the basis of 
 
     return sorted_data
     
+
+
+# Pydantic Models
+class Patient(BaseModel):
+
+    id: Annotated[str , Field(..., description="Unique identifier for the patient", example="P005")] 
+    name: Annotated[str, Field(..., description="Full name of the patient", example="John Doe")]
+    city: Annotated[int, Field(..., description="City of the patient")]
+    age: Annotated[int, Field(..., gt=0, lt=120,  description="Age of the patient", example=30 )]
+    gender: Annotated[Literal['male', 'female', 'other'], Field(..., description="Gender of a Patient")]
+    height: Annotated[float, Field(... , description="Height of the patient in mtrs")]
+    weight: Annotated[float , Field(... , description="Weight of the patient in kgs")]
+
+# Compute the BMI
+@computed_field         # This tells Pydantic that this field (BMI) is computed, not stored.
+@property               # This allows you to access bmi like a normal attribute
+def bmi(self) -> float:         # self means the current patient object
+    bmi = round(self.weight / (self.height ** 2), 2)
+    return bmi
+
+# Compute the verdict based on BMI
+@computed_field
+@property
+def verdict(self) -> str:
+
+    if self.bmi < 18.5:
+        return "Underweight"
+    elif 18.5 <= self.bmi < 24.9:
+        return "Normal weight"
+    elif 25 <= self.bmi < 29.9:
+        return "Overweight"
+    else:
+        return "Obesity"
+    
+
+# Define an endpoint to add a new patient
+@app.post('/create')
+def create_patient(patient: Patient):       # this patient is of type Patient model
+    
+    # load existing patient data
+    data = load_data()
+
+    # Check if patient ID already exists
+    if patient.id in data:
+        raise HTTPException(status_code=400, detail="Patient ID already exists")
+    
+    # Add new patient to the data
+    data[patient.id]  = patient.model_dump(exclude=['id'])    # Convert Pydantic model to dictionary and Add new patient data to existing data
+
+    # Save updated data back to the JSON 
+    def save_data(data):
+        with open('patients.json', 'w') as file:
+            json.dump(data, file)           # Dump data to JSON file
+
+    save_data(data)
+
+
+    return JSONResponse(content={"message": "Patient created successfully"}, status_code=201)
+
+
+
 
     

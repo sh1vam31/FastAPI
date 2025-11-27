@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Path, HTTPException, Query           # Import FastAPI class
 import json
 from fastapi.responses import JSONResponse       # Import JSONResponse for custom JSON responses
-from typing import Annotated, Literal   # Import Annotated and Literal for type annotations
+from typing import Annotated, Literal , Optional   # Import Annotated and Literal for type annotations
 from pydantic import BaseModel, Field, computed_field      # Import BaseModel from Pydantic for data validation and Field for giving extra information about the fields and computed_field for computed properties
 
 app = FastAPI()             # Create an Object of FastAPI
@@ -19,6 +19,10 @@ def load_data():
     with open('patients.json' , 'r') as file:
         data = json.load(file)
     return data
+
+def save_data(data):
+    with open('patients.json', 'w') as file:
+        json.dump(data, file)
 
 @app.get('/view')
 def view_patients():
@@ -71,7 +75,7 @@ class Patient(BaseModel):
 
     id: Annotated[str , Field(..., description="Unique identifier for the patient", example="P005")] 
     name: Annotated[str, Field(..., description="Full name of the patient", example="John Doe")]
-    city: Annotated[int, Field(..., description="City of the patient")]
+    city: Annotated[str, Field(..., description="City of the patient")]
     age: Annotated[int, Field(..., gt=0, lt=120,  description="Age of the patient", example=30 )]
     gender: Annotated[Literal['male', 'female', 'other'], Field(..., description="Gender of a Patient")]
     height: Annotated[float, Field(... , description="Height of the patient in mtrs")]
@@ -113,17 +117,67 @@ def create_patient(patient: Patient):       # this patient is of type Patient mo
     # Add new patient to the data
     data[patient.id]  = patient.model_dump(exclude=['id'])    # Convert Pydantic model to dictionary and Add new patient data to existing data
 
-    # Save updated data back to the JSON 
-    def save_data(data):
-        with open('patients.json', 'w') as file:
-            json.dump(data, file)           # Dump data to JSON file
-
     save_data(data)
 
 
     return JSONResponse(content={"message": "Patient created successfully"}, status_code=201)
 
 
+    # PUT endpoint to update an existing patient
 
+class PatientUpdate(BaseModel):
+    name: Annotated[Optional[str], Field(default=None)]
+    city: Annotated[Optional[str], Field(default=None)]
+    age: Annotated[Optional[int], Field(default=None, gt=0)]
+    gender: Annotated[Optional[Literal['male', 'female', 'other']], Field(default=None)]
+    height: Annotated[Optional[float], Field(default=None, gt=0)]
+    weight: Annotated[Optional[float], Field(default=None, gt=0)]
+
+
+@app.put('/edit/{patient_id}')
+def update_patient(patient_id: str, patient_update: PatientUpdate):
+
+    data = load_data()
+
+    if patient_id not in data:
+        raise HTTPException(status_code=404, detail='Patient not found')
+    
+    existing_patient_info = data[patient_id]
+
+    updated_patient_info = patient_update.model_dump(exclude_unset=True)
+
+    for key, value in updated_patient_info.items():
+        existing_patient_info[key] = value
+
+    #existing_patient_info -> pydantic object -> updated bmi + verdict
+    existing_patient_info['id'] = patient_id
+    patient_pydandic_obj = Patient(**existing_patient_info)
+    #-> pydantic object -> dict
+    existing_patient_info = patient_pydandic_obj.model_dump(exclude='id')
+
+    # add this dict to data
+    data[patient_id] = existing_patient_info
+
+    # save data
+    save_data(data)
+
+    return JSONResponse(status_code=200, content={'message':'patient updated'})
+
+
+# DELETE endpoint to delete a patient
+@app.delete('/delete/{patient_id}')
+def delete_patient(patient_id: str):
+
+    # load data
+    data = load_data()
+
+    if patient_id not in data:
+        raise HTTPException(status_code=404, detail='Patient not found')
+    
+    del data[patient_id]
+
+    save_data(data)
+
+    return JSONResponse(status_code=200, content={'message':'patient deleted'})
 
     
